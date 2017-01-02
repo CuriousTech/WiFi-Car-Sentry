@@ -39,10 +39,9 @@ SOFTWARE.
 #include <UdpTime.h>
 #include <DHT.h>  // http://www.github.com/markruys/arduino-DHT
 #include "eeMem.h"
-#include "RunningMedian.h"
 #include <JsonParse.h> // https://github.com/CuriousTech/ESP8266-HVAC/tree/master/Libraries/JsonParse
 
-const char controlPassword[] = "esp8266ct";    // device password for modifying any settings
+const char controlPassword[] = "password";    // device password for modifying any settings
 const int serverPort = 80;                    // HTTP port
 
 #define IN1       0  // sink input 1
@@ -70,9 +69,9 @@ AsyncWebServer server( serverPort );
 AsyncEventSource events("/events"); // event source (Server-Sent events)
 AsyncWebSocket ws("/ws"); // access at ws://[esp ip]/ws
 
-int16_t rh;
+uint16_t rh;
 int16_t carTemp;
-int16_t volts;
+uint16_t volts;
 uint16_t ssCnt = 60;
 const char hostName[] = "CarSentry";
 bool bKeyGood;
@@ -100,11 +99,11 @@ String dataJson()
 String setJson() // settings
 {
   String s = "{";
-  s += "\"o\":";   s += ee.bEnableOLED;
+  s += "\"o\":";    s += ee.bEnableOLED;
   s += ",\"tz\":";  s += ee.tz;
   s += ",\"o1\":";  s += digitalRead(OUT1);
   s += ",\"o2\":";  s += digitalRead(OUT2);
-  s += ", \"to\": ";   s += ee.time_off;
+  s += ",\"to\": "; s += ee.time_off;
   s += "}";
   return s;
 }
@@ -198,7 +197,6 @@ String timeFmt(bool do_sec, bool do_M)
 }
 
 void handleS(AsyncWebServerRequest *request) { // standard params, but no page
-  Serial.println("handleS\n");
   parseParams(request);
 
   String page = "{\"ip\": \"";
@@ -232,8 +230,10 @@ const char *jsonListCmd[] = { "cmd",
   "key",
   "oled",
   "TZ", // location
-  "TO", // timeout
+  "TO", // time_off
   "sleep",
+  "O1", // OUT1
+  "O2",
   NULL
 };
 
@@ -263,6 +263,12 @@ void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
         case 4: // sleep
           sleepTimer = constrain(iValue, 1, 1000);
           break;
+        case 5:
+          digitalWrite(OUT1, iValue);
+          break;
+        case 6:
+          digitalWrite(OUT2, iValue);
+          break;
       }
       break;
   }
@@ -287,6 +293,8 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       break;
     case WS_EVT_DISCONNECT:    //client disconnected
       bConnected = false;
+      if(sleepTimer == 0)
+        sleepTimer = 10;
       break;
     case WS_EVT_ERROR:    //error was received from the other end
       break;
@@ -415,9 +423,6 @@ void setup()
 
 void loop()
 {
-  static RunningMedian<int16_t,12> tempMedian;
-  static RunningMedian<int16_t,12> rhMedian;
-  static RunningMedian<int16_t,12> voltMedian;
   static uint8_t hour_save, min_save, sec_save;
   static bool bLastOn;
 
@@ -445,16 +450,15 @@ void loop()
   {
     sec_save = second();
 
-    static uint8_t dht_cnt = 5;
+    static uint8_t dht_cnt = 3;
     if(--dht_cnt == 0)
     {
-      dht_cnt = 10;
-      rhMedian.add((uint16_t)(dht.getHumidity() * 10));
+      dht_cnt = 5;
+      uint16_t r = (uint16_t)(dht.getHumidity() * 10);
       if(dht.getStatus() == DHT::ERROR_NONE)
       {
-        rhMedian.getMedian(rh);
-        tempMedian.add((uint16_t)(dht.toFahrenheit(dht.getTemperature()) * 10));
-        tempMedian.getMedian(carTemp);
+        rh = r;
+        carTemp = (dht.toFahrenheit(dht.getTemperature()) * 10);
       }
     }
 
@@ -479,16 +483,11 @@ void loop()
       displayOnTimer --;
     }
 
-    Serial.print(carTemp);
-    Serial.print(" ");
-    Serial.print(rh);
-    Serial.print(" ");
-
-    // 100K / 6.34K to 1V : 17V = 1.008V or 1024
+    // 100K / 6.34K to 1V : 17V = 1.008V or 1024 (17/1024=1.66)
     digitalWrite(VOLTFET, LOW);
-    voltMedian.add((uint16_t)(analogRead(0) * 1.582) ); // shift over for 1200 = 12.00v
-    voltMedian.getMedian(volts);
+    volts = (uint16_t)(analogRead(0) * 1.582);
     digitalWrite(VOLTFET, HIGH);
+    Serial.print("volts ");
     Serial.println(volts);
 
     if(sleepTimer && bConnected == false) // don't sleep until the page is closed
