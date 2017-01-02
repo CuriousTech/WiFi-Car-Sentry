@@ -1,0 +1,19 @@
+ESP-07
+OLED        0.96" I2C (GND on pin 1)
+DHT-22
+3V3 VR      MCP1755T-3302E/DC (16V 300mA 0.5Vdo)
+R1-R5,R7    10K 0805
+R6,R9       1K
+R8          2.2K
+R10         100K
+R11         6.34K
+R12         4.7K
+C1,C3,C7,C8 0.1uF
+C2          unused, may be needed
+C4          1uF
+Q1          SOT-23 P-Channel FET <3V gate threshold (SI2369DS-T1-GE3)
+Q2,Q3       SOT-23 N-Channel FET (PMV20ENR)
+Q4          SOT-23 General purpose NPN
+
+FLASH       4x2mm buttton
+PWR,SER     2-pin 0.1" header
