@@ -3,7 +3,7 @@ Low power car monitor and control system
   
 This is an incomplete project currently.  
   
-Using the ESP07, it connects with the home WiFi to report information on timer using DeepSleep.  Remember to remove both LEDs on the ESP to reduce current.  
+Using the ESP07, it connects with the home WiFi to report information on timer using DeepSleep.  Remember to remove the red LED on the ESP to reduce current.  It uses about 700µA with the power LED and 100µA without.  
   
 I/O peripherals:  
   OLED (for temporary display)  
