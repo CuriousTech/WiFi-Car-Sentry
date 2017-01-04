@@ -75,8 +75,9 @@ uint16_t volts;
 uint16_t ssCnt = 60;
 const char hostName[] = "CarSentry";
 bool bKeyGood;
-uint32_t sleepTimer;
-bool bConnected;
+uint32_t sleepDelay = 10; // default value for WebSocket close -> sleepTimer
+uint32_t sleepTimer = 60; // seconds delay after startup to enter sleep (Note: even if no AP found)
+int8_t openCnt;
 
 void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue);
 JsonParse jsonParse(jsonCallback);
@@ -209,13 +210,6 @@ void handleS(AsyncWebServerRequest *request) { // standard params, but no page
 
 void onEvents(AsyncEventSourceClient *client)
 {
-//  client->send(":ok", NULL, millis(), 1000);
-  static bool rebooted = true;
-  if(rebooted)
-  {
-    rebooted = false;
-    events.send("Restarted", "alert");
-  }
   events.send(dataJson().c_str(), "state");
 }
 
@@ -261,7 +255,7 @@ void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
           ee.time_off = iValue;
           break;
         case 4: // sleep
-          sleepTimer = constrain(iValue, 1, 1000);
+          sleepDelay = constrain(iValue, 1, 10000);
           break;
         case 5:
           digitalWrite(OUT1, iValue);
@@ -276,25 +270,20 @@ void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
 
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
 {  //Handle WebSocket event
-  static bool bRestarted = true;
 
   switch(type)
   {
     case WS_EVT_CONNECT:      //client connected
-      if(bRestarted)
-      {
-        bRestarted = false;
-        client->printf("alert;restarted");
-      }
       client->printf("state;%s", dataJson().c_str());
       client->printf("set;%s", setJson().c_str());
       client->ping();
-      bConnected = true;
+      openCnt++;
       break;
     case WS_EVT_DISCONNECT:    //client disconnected
-      bConnected = false;
-      if(sleepTimer == 0)
-        sleepTimer = 10;
+      if(openCnt)
+        openCnt--;
+      if(sleepDelay)
+        sleepTimer = sleepDelay;
       break;
     case WS_EVT_ERROR:    //error was received from the other end
       break;
@@ -485,12 +474,15 @@ void loop()
 
     // 100K / 6.34K to 1V : 17V = 1.008V or 1024 (17/1024=1.66)
     digitalWrite(VOLTFET, LOW);
-    volts = (uint16_t)(analogRead(0) * 1.582);
+    uint16_t v = analogRead(0);
+    volts = (v * 1.582);
     digitalWrite(VOLTFET, HIGH);
-    Serial.print("volts ");
-    Serial.println(volts);
+//    Serial.print("volts ");
+//    Serial.print(v);
+//    Serial.print(" ");
+//    Serial.println(volts);
 
-    if(sleepTimer && bConnected == false) // don't sleep until the page is closed
+    if(sleepTimer && openCnt == 0) // don't sleep until all ws connections are closed
     {
       if(--sleepTimer == 0)
       {
