@@ -2,8 +2,8 @@
 #include <EEPROM.h>
 
 eeSet ee = { sizeof(eeSet), 0xAAAA,
-  "S4786N4",      // saved SSID
-  "m27c4001prom", // router password
+  "",             // saved SSID
+  "",             // router password
   -5,             // TZ
   true,           // OLED
   80,             // hostPort
