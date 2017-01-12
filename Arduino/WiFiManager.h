@@ -28,8 +28,8 @@ class WiFiManager
 {
 public:
     WiFiManager();
-    void autoConnect(void);
-    void autoConnect(char const *apName);
+    bool autoConnect(void);
+    bool autoConnect(char const *apName);
     String page(void);
     void seconds(void);
     void setPass(const char *p);
