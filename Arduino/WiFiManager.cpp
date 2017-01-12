@@ -20,11 +20,11 @@ WiFiManager::WiFiManager()
 {
 }
 
-void WiFiManager::autoConnect() {
-    autoConnect("NoNetESP");
+bool WiFiManager::autoConnect() {
+    return autoConnect("NoNetESP");
 }
 
-void WiFiManager::autoConnect(char const *apName) {
+bool WiFiManager::autoConnect(char const *apName) {
     _apName = apName;
 
 //  DEBUG_PRINT("");
@@ -38,8 +38,9 @@ void WiFiManager::autoConnect(char const *apName) {
     if ( hasConnected() )
     {
       _bCfg = false;
-      return;
+      return true;
     }
+    return false; // can't find configured AP
   }
   //setup AP
   WiFi.mode(WIFI_AP);
@@ -57,6 +58,7 @@ void WiFiManager::autoConnect(char const *apName) {
 
   _timeout = true;
   _bCfg = true;
+  return true;
 }
 
 boolean WiFiManager::hasConnected(void)
