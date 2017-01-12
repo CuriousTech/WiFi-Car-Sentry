@@ -39,10 +39,10 @@ SOFTWARE.
 #include <UdpTime.h>
 #include <DHT.h>  // http://www.github.com/markruys/arduino-DHT
 #include "eeMem.h"
-#include <JsonParse.h> // https://github.com/CuriousTech/ESP8266-HVAC/tree/master/Libraries/JsonParse
+#include <JsonClient.h> // https://github.com/CuriousTech/ESP8266-HVAC/tree/master/Libraries/JsonClient
 
 const char controlPassword[] = "password";    // device password for modifying any settings
-const int serverPort = 80;                    // HTTP port
+const int serverPort = 81;                    // HTTP port
 
 #define IN1       0  // sink input 1
 #define OUT1      2  // sink output 1 MOSFET
@@ -80,7 +80,8 @@ uint32_t sleepTimer = 60; // seconds delay after startup to enter sleep (Note: e
 int8_t openCnt;
 
 void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue);
-JsonParse jsonParse(jsonCallback);
+JsonClient jsonParse(jsonCallback);
+JsonClient jsonPush(jsonCallback);
 
 const char days[7][4] = {"Sun","Mon","Tue","Wed","Thr","Fri","Sat"};
 const char months[12][4] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
@@ -230,7 +231,7 @@ const char *jsonListCmd[] = { "cmd",
   "O2",
   NULL
 };
-
+      
 void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
 {
   if(!bKeyGood && iName) return; // only allow for key
@@ -329,9 +330,6 @@ void setup()
   pinMode(OUT1, OUTPUT);
   pinMode(OUT2, OUTPUT);
 
-  attachInterrupt(IN1, in1ISR, FALLING);
-  attachInterrupt(IN12V, in12VISR, CHANGE);
-
   // initialize dispaly
   display.init();
   display.flipScreenVertically();
@@ -341,7 +339,12 @@ void setup()
   Serial.println();
 
   WiFi.hostname(hostName);
-  wifi.autoConnect(hostName); // Tries config AP, then starts softAP mode for config
+  if(!wifi.autoConnect(hostName)) // Tries config AP.  goes to DeepSleep if not found
+  {
+    uint32_t us = ee.time_off * 1000000;
+    ESP.deepSleep(us, WAKE_RF_DEFAULT);
+  }
+
   if(wifi.isCfg() == false)
   {
     Serial.println("");
@@ -359,6 +362,9 @@ void setup()
   SPIFFS.begin();
   server.addHandler(new SPIFFSEditor("admin", controlPassword));
 #endif
+
+  attachInterrupt(IN1, in1ISR, FALLING);
+  attachInterrupt(IN12V, in12VISR, CHANGE);
 
   // attach AsyncEventSource
   events.onConnect(onEvents);
@@ -402,12 +408,15 @@ void setup()
   });
   server.begin();
 
+  dht.setup(DHT22IO, DHT::DHT22);
   jsonParse.addList(jsonListCmd);
+  jsonPush.addList(jsonListCmd);
 
   if(wifi.isCfg() == false) // not really connected to the net yet
+  {
     utime.start();
-
-  dht.setup(DHT22IO, DHT::DHT22);
+    jsonPush.begin("192.168.0.100", "/car", 83, false, true, NULL, NULL);
+  }
 }
 
 void loop()
@@ -439,7 +448,7 @@ void loop()
   {
     sec_save = second();
 
-    static uint8_t dht_cnt = 3;
+    static uint8_t dht_cnt = 1;
     if(--dht_cnt == 0)
     {
       dht_cnt = 5;
@@ -448,7 +457,7 @@ void loop()
       {
         rh = r;
         carTemp = (dht.toFahrenheit(dht.getTemperature()) * 10);
-      }
+      }else Serial.println("Temp error");
     }
 
     if(--ssCnt == 0) // periodic data update
@@ -477,10 +486,10 @@ void loop()
     uint16_t v = analogRead(0);
     volts = (v * 1.582);
     digitalWrite(VOLTFET, HIGH);
-//    Serial.print("volts ");
-//    Serial.print(v);
-//    Serial.print(" ");
-//    Serial.println(volts);
+    Serial.print("volts ");
+    Serial.print(v);
+    Serial.print(" ");
+    Serial.println(volts);
 
     if(sleepTimer && openCnt == 0) // don't sleep until all ws connections are closed
     {
