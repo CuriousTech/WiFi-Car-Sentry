@@ -20,12 +20,9 @@ WiFiManager::WiFiManager()
 {
 }
 
-bool WiFiManager::autoConnect() {
-    return autoConnect("NoNetESP");
-}
-
-bool WiFiManager::autoConnect(char const *apName) {
+bool WiFiManager::autoConnect(char const *apName, const char *pPass) {
     _apName = apName;
+    _pPass = pPass;
 
 //  DEBUG_PRINT("");
 //    DEBUG_PRINT("AutoConnect");
@@ -92,7 +89,7 @@ void WiFiManager::setPass(const char *p){
   strncpy(ee.szSSIDPassword, p, sizeof(ee.szSSIDPassword) );
   eemem.update();
   DEBUG_PRINT("Updated EEPROM.  Restaring.");
-  autoConnect(_apName);
+  autoConnect(_apName, _pPass);
 }
 
 void WiFiManager::seconds(void) {
@@ -114,7 +111,7 @@ void WiFiManager::seconds(void) {
     if(WiFi.SSID(i) == ee.szSSID) // found cfg SSID
     {
       DEBUG_PRINT("SSID found.  Restarting.");
-      autoConnect(_apName);
+      autoConnect(_apName, _pPass);
       s = 5; // set to 5 seconds in case it fails again
     }
   }
@@ -127,6 +124,7 @@ String WiFiManager::page()
   s += HTTP_STYLE;
   s += HTTP_HEAD_END;
 
+  WiFi.scanNetworks();
   for (int i = 0;  WiFi.SSID(i).length(); ++i)
   {
     DEBUG_PRINT(WiFi.SSID(i));
@@ -136,7 +134,9 @@ String WiFiManager::page()
     s += item;
   }
   
-  s += HTTP_FORM;
+  String form = HTTP_FORM;
+  form.replace("$key", _pPass );
+  s += form;
   s += HTTP_END;
   
   _timeout = false;
