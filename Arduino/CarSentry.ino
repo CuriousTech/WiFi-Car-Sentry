@@ -39,7 +39,7 @@ SOFTWARE.
 #include <UdpTime.h>
 #include <DHT.h>  // http://www.github.com/markruys/arduino-DHT
 #include "eeMem.h"
-#include <JsonClient.h> // https://github.com/CuriousTech/ESP8266-HVAC/tree/master/Libraries/JsonClient
+#include <JsonClient.h> // https://github.com/CuriousTech/ESP8266-HVAC/tree/master/Libraries/JsonParse
 
 const char controlPassword[] = "password";    // device password for modifying any settings
 const int serverPort = 81;                    // HTTP port
@@ -339,8 +339,16 @@ void setup()
   Serial.println();
 
   WiFi.hostname(hostName);
-  if(!wifi.autoConnect(hostName)) // Tries config AP.  goes to DeepSleep if not found
+  if(!wifi.autoConnect(hostName, controlPassword)) // Tries config AP.  goes to DeepSleep if not found
   {
+    if(digitalRead(IN1) == LOW) // hold the flash button down a couple seconds after powerup to clear SSID and password
+    {                           // don't use this if IN1 is connected to something
+      ee.szSSID[0] = 0;
+      ee.szSSIDPassword[0] = 0;
+      eemem.update();
+      Serial.println("SSID cleared");
+      delay(1000);
+    }
     uint32_t us = ee.time_off * 1000000;
     ESP.deepSleep(us, WAKE_RF_DEFAULT);
   }
@@ -491,7 +499,7 @@ void loop()
     Serial.print(" ");
     Serial.println(volts);
 
-    if(sleepTimer && openCnt == 0) // don't sleep until all ws connections are closed
+    if(sleepTimer && openCnt == 0 && wifi.isCfg() == false) // don't sleep until all ws connections are closed
     {
       if(--sleepTimer == 0)
       {
