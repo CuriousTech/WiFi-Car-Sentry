@@ -24,21 +24,48 @@ bool WiFiManager::autoConnect(char const *apName, const char *pPass) {
     _apName = apName;
     _pPass = pPass;
 
-//  DEBUG_PRINT("");
-//    DEBUG_PRINT("AutoConnect");
-    
-  if ( ee.szSSID[0] ) {
+  DEBUG_PRINT("");
+  DEBUG_PRINT("AutoConnect");
+  bool bFound = false;
+
+  if(ee.szSSID[0]) // scan for configured AP
+  {
+    int n = WiFi.scanNetworks();
+    if(n == 0 )
+    {
+      DEBUG_PRINT("No APs in range");
+      return false;
+    }
+  
+    for (int i = 0; i < n; i++)
+    {
+//    display.print(WiFi.SSID(i));
+
+      if(WiFi.SSID(i) == ee.szSSID) // found cfg SSID
+      {
+        DEBUG_PRINT("SSID found.  Connecting.");
+        bFound = true;
+      }
+    }
+    // 2.3 seconds
+
+    if(bFound == false)
+      return false;
+
+    // connect to configured AP
     DEBUG_PRINT("Waiting for Wifi to connect");
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(ee.szSSID, ee.szSSIDPassword);
+
     if ( hasConnected() )
     {
       _bCfg = false;
-      return true;
+      return true; // 1~9 seconds
     }
-    return false; // can't find configured AP
+    return false; // can't find configured AP  ~10 seconds
   }
+
   //setup AP
   WiFi.mode(WIFI_AP);
   WiFi.softAP(apName);
