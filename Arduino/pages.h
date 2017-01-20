@@ -89,7 +89,7 @@ const char page1[] PROGMEM =
    "<tr><td align=\"center\" colspan=2><div id=\"time\"></div></td><td><div id=\"v\"></div> </td><td align=\"center\"><div id=\"on\"></div></td></tr>\n"
    "<tr><td align=\"center\" colspan=2>Env: </td><td><div id=\"ct\"></div></td><td align=\"left\"><div id=\"rh\"></div> </td></tr>\n"
    "<tr><td colspan=2>TZ <input id='tz' type=text size=2 value='-5'><input value=\"Set\" type='button' onclick=\"{setTZ()}\"></td><td colspan=2>Display:<input type=\"button\" value=\"ON \" id=\"OLED\" onClick=\"{oled()}\"></td></tr>\n"
-   "<tr><td colspan=2>Time <input id='to' type=text size=2 value='10'><input value=\"Set\" type='button' onclick=\"{setTO()}\"></td><td colspan=2>Out1:<input type=\"button\" value=\"OFF\" id=\"O1\" onClick=\"{setOut1()}\">Out2:<input type=\"button\" value=\"OFF\" id=\"O2\" onClick=\"{setOut2()}\"></td></tr>\n"
+   "<tr><td colspan=2>Time <input id='to' type=text size=2 value='10'><input value=\"Set\" type='button' onclick=\"{setTO()}\"></td><td colspan=2>Out1:<input type=\"button\" value=\"OFF\" id=\"O1\" onClick=\"{setO1()}\">Out2:<input type=\"button\" value=\"OFF\" id=\"O2\" onClick=\"{setO2()}\"></td></tr>\n"
    "<tr><td colspan=2></td><td colspan=2><input id=\"myKey\" name=\"key\" type=text size=40 placeholder=\"password\" style=\"width: 90px\"><input type=\"button\" value=\"Save\" onClick=\"{localStorage.setItem('key', key = document.all.myKey.value)}\"></td></tr>\n"
    "</table>\n"
    "</body>\n"
