@@ -11,8 +11,8 @@ R12         4.7K
 C1,C3,C7,C8 0.1uF
 C2          unused, may be needed
 C4          1uF
-Q1          SOT-23 P-Channel FET <3V gate threshold (SI2369DS-T1-GE3)
-Q2,Q3       SOT-23 N-Channel FET (PMV20ENR)
+Q1,Q3       SOT-23 P-Channel FET <3V gate threshold (SI2369DS-T1-GE3)
+Q2          SOT-23 N-Channel FET (PMV20ENR)
 Q4          SOT-23 General purpose NPN
 
 FLASH       4x2mm buttton
