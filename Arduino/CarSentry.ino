@@ -20,6 +20,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+
+//uncomment to enable Arduino IDE Over The Air update code
+#define OTA_ENABLE
+
 //#define USE_SPIFFS
 
 #include <Wire.h>
@@ -34,6 +38,10 @@ SOFTWARE.
 #else
 #include "pages.h"
 #endif
+#ifdef OTA_ENABLE
+#include <FS.h>
+#include <ArduinoOTA.h>
+#endif
 #include <OneWire.h>
 #include <TimeLib.h> // http://www.pjrc.com/teensy/td_libs_Time.html
 #include <UdpTime.h>
@@ -44,15 +52,17 @@ SOFTWARE.
 const char controlPassword[] = "password";    // device password for modifying any settings
 const int serverPort = 81;                    // HTTP port
 
-#define IN1       0  // sink input 1
-#define OUT1      2  // sink output 1 MOSFET
+#define IN1       0  // Sink input 1 (Direct sink 5V tolerant)
+#define OUT3      1  // TX Sink output 3 MOSFET (high to sink)
+#define OUT1      2  // Sink output 1 MOSFET (low to sink) (Note: Rev 1 has P-channel here)
 #define ESP_LED   2  // Blue LED on ESP07 (on low)
-#define SDA       4
+#define IN2       3  // RX 1~40V input (sink)
+#define SDA       4  // OLED
 #define SCL       5  // OLED
 #define DHT22IO  12  // The DHT22
-#define IN12V    13  // 12V input (sink) use PULLUP
+#define IN12V    13  // 1~30V input (sink) use PULLUP
 #define VOLTFET  14  // voltage reading MOSFET
-#define OUT2     15  // Sink output 2 MOSFET
+#define OUT2     15  // Sink output 2 MOSFET (high to sink)
 #define SLEEP    16  // Wake pin
 
 uint32_t lastIP;
@@ -78,6 +88,8 @@ bool bKeyGood;
 uint32_t sleepDelay = 10; // default value for WebSocket close -> sleepTimer
 uint32_t sleepTimer = 60; // seconds delay after startup to enter sleep (Note: even if no AP found)
 int8_t openCnt;
+uint8_t nPulse;
+uint8_t pulseCh;
 
 void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue);
 JsonClient jsonParse(jsonCallback);
@@ -93,7 +105,9 @@ String dataJson()
   s += ", \"ct\": ";  s += sDec(carTemp);
   s += ", \"rh\": ";   s += sDec(rh);
   s += ", \"v\": ";   s += (float)volts / 100;
-  s += ", \"on\": ";   s += digitalRead(IN12V) ? 0:1;
+  s += ", \"in1\": ";   s += digitalRead(IN1) ? 0:1;
+  s += ", \"in2\": ";   s += digitalRead(IN2) ? 0:1;
+  s += ", \"in12v\": ";   s += digitalRead(IN12V) ? 0:1;
   s += "}";
   return s;
 }
@@ -103,8 +117,9 @@ String setJson() // settings
   String s = "{";
   s += "\"o\":";    s += ee.bEnableOLED;
   s += ",\"tz\":";  s += ee.tz;
-  s += ",\"o1\":";  s += digitalRead(OUT1);
-  s += ",\"o2\":";  s += digitalRead(OUT2);
+  s += ",\"o1\":";  s += digitalRead(OUT1) ? 0:1;
+  s += ",\"o2\":";  s += digitalRead(OUT2) ? 1:0;
+  s += ",\"o3\":";  s += digitalRead(OUT3) ? 1:0;
   s += ",\"to\": "; s += ee.time_off;
   s += "}";
   return s;
@@ -216,9 +231,10 @@ void onEvents(AsyncEventSourceClient *client)
 
 void sendState()
 {
-  events.send(dataJson().c_str(), "state");
-  ws.printfAll("state;%s", dataJson().c_str());
-  ssCnt = 60;
+  String s = dataJson();
+  events.send(s.c_str(), "state");
+  ws.textAll(String("state;") + s);
+  ssCnt = 58;
 }
 
 const char *jsonListCmd[] = { "cmd",
@@ -229,6 +245,7 @@ const char *jsonListCmd[] = { "cmd",
   "sleep",
   "O1", // OUT1
   "O2",
+  "PLS", // Pulse OUTn for 1 second
   NULL
 };
       
@@ -258,11 +275,15 @@ void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
         case 4: // sleep
           sleepDelay = constrain(iValue, 1, 10000);
           break;
-        case 5:
-          digitalWrite(OUT1, iValue);
+        case 5: // O1=n
+          digitalWrite(OUT1, iValue ? LOW:HIGH);
           break;
-        case 6:
-          digitalWrite(OUT2, iValue);
+        case 6: // O2=n
+          digitalWrite(OUT2, iValue ? HIGH:LOW);
+          break;
+        case 7: // PLS=Ch
+          nPulse = 2;
+          pulseCh = iValue;
           break;
       }
       break;
@@ -327,6 +348,7 @@ void setup()
   pinMode(IN1, INPUT_PULLUP);
   pinMode(IN12V, INPUT_PULLUP);
   pinMode(VOLTFET, OUTPUT);
+  digitalWrite(OUT1, HIGH);
   pinMode(OUT1, OUTPUT);
   pinMode(OUT2, OUTPUT);
 
@@ -334,9 +356,11 @@ void setup()
   display.init();
   display.flipScreenVertically();
 
+#ifdef DEBUG
   Serial.begin(115200);
-//  delay(3000);
+  delay(3000);
   Serial.println();
+#endif
 
   WiFi.hostname(hostName);
   if(!wifi.autoConnect(hostName, controlPassword)) // Tries config AP.  goes to DeepSleep if not found
@@ -346,22 +370,25 @@ void setup()
       ee.szSSID[0] = 0;
       ee.szSSIDPassword[0] = 0;
       eemem.update();
+#ifdef DEBUG
       Serial.println("SSID cleared");
       delay(1000);
+#endif
     }
-    uint32_t us = ee.time_off * 1000000;
+    uint32_t us = 1000000; // 1 second to restart
+    display.displayOff();
     ESP.deepSleep(us, WAKE_RF_DEFAULT);
   }
 
   if(wifi.isCfg() == false)
   {
+#ifdef DEBUG
     Serial.println("");
     Serial.println("WiFi connected");
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
-  
-    if ( !MDNS.begin ( hostName, WiFi.localIP() ) )
-      Serial.println ( "MDNS responder failed" );
+#endif
+    MDNS.begin ( hostName, WiFi.localIP() );
   }
 
   MDNS.addService("http", "tcp", serverPort);
@@ -416,6 +443,13 @@ void setup()
   });
   server.begin();
 
+#ifdef OTA_ENABLE
+  ArduinoOTA.begin();
+  ArduinoOTA.onStart([]() {
+    eemem.update();
+  });
+#endif
+
   dht.setup(DHT22IO, DHT::DHT22);
   jsonParse.addList(jsonListCmd);
   jsonPush.addList(jsonListCmd);
@@ -425,6 +459,8 @@ void setup()
     utime.start();
     jsonPush.begin("192.168.0.100", "/car", 83, false, true, NULL, NULL);
   }
+
+  sleepTimer = 60;
 }
 
 void loop()
@@ -433,6 +469,9 @@ void loop()
   static bool bLastOn;
 
   MDNS.update();
+#ifdef OTA_ENABLE
+  ArduinoOTA.handle();
+#endif
 
   if(!wifi.isCfg())
     utime.check(ee.tz);
@@ -440,15 +479,15 @@ void loop()
   if(bIn1Triggered) // sink triggered
   {
     bIn1Triggered = false;
-    Serial.println("IN1 triggered");
+//    Serial.println("IN1 triggered");
     events.send("IN1 triggered", "alert");
   }
 
   if(bIn12VTriggered) // 12V in changed
   {
     bIn12VTriggered = false;
-    Serial.print("12V changed to ");
-    Serial.println( digitalRead(IN12V) );
+//    Serial.print("12V changed to ");
+//    Serial.println( digitalRead(IN12V) );
     sendState();
   }
 
@@ -465,12 +504,34 @@ void loop()
       {
         rh = r;
         carTemp = (dht.toFahrenheit(dht.getTemperature()) * 10);
-      }else Serial.println("Temp error");
+      }//else Serial.println("Temp error");
     }
 
     if(--ssCnt == 0) // periodic data update
     {
        sendState();
+    }
+
+    switch(nPulse)
+    {
+      case 1:
+        switch(pulseCh)
+        {
+          case 1: digitalWrite(OUT1, HIGH); break;
+          case 2: digitalWrite(OUT2, LOW); break;
+          case 3: digitalWrite(OUT3, LOW); break;
+        }
+        nPulse = 0;
+        break;
+      case 2:
+        switch(pulseCh)
+        {
+          case 1: digitalWrite(OUT1, LOW); break;
+          case 2: digitalWrite(OUT2, HIGH); break;
+          case 3: digitalWrite(OUT3, HIGH); break;
+        }
+        nPulse = 1;
+        break;
     }
 
     if(min_save != minute()) // only do stuff once per minute
@@ -494,10 +555,10 @@ void loop()
     uint16_t v = analogRead(0);
     volts = (v * 1.582);
     digitalWrite(VOLTFET, HIGH);
-    Serial.print("volts ");
-    Serial.print(v);
-    Serial.print(" ");
-    Serial.println(volts);
+//    Serial.print("volts ");
+//    Serial.print(v);
+//    Serial.print(" ");
+//    Serial.println(volts);
 
     if(sleepTimer && openCnt == 0 && wifi.isCfg() == false) // don't sleep until all ws connections are closed
     {
@@ -508,7 +569,9 @@ void loop()
           eemem.update(); // Update EE if anything changed before entering sleep
           delay(100);
 
-          uint32_t us = ee.time_off * 1000000;  // seconds to us
+//        uint32_t us = ee.time_off * 1000000 * 60;  // minutes to us
+          uint32_t us = ee.time_off * 60022000;  // minutes to us adjusted
+          display.displayOff();
           ESP.deepSleep(us, WAKE_RF_DEFAULT);
         }
       }
@@ -540,7 +603,7 @@ void loop()
 
     display.drawString( 8, 22, "Temp");
     display.drawPropString(2, 33, String((float)carTemp / 10, 1) + "]" ); // <- that's a degree symbol
-    display.drawString(2, 48, String((float)rh / 10, 1) + "%");
+    display.drawString(2, 52, String((float)rh / 10, 1) + "%");
     display.drawString( 88, 22, "Volts");
     display.drawPropString(74, 33, String((float)volts / 100, 1) + "v" );
   }
