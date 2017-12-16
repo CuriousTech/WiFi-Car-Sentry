@@ -2,14 +2,21 @@
 #include <EEPROM.h>
 
 eeSet ee = { sizeof(eeSet), 0xAAAA,
-  "",             // saved SSID
-  "",             // router password
+  "",      // saved SSID
+  "", // router password
   -5,             // TZ
-  true,           // OLED
-  80,             // hostPort
-  0,              // hostIP
-  0,              // time_off
-  {0}, // res
+  false,           // OLED
+  83,             // hostPort
+  192 | (168<<8) | (100<<24), // hostIP 192.168.0.100
+  10,             // time_off
+  true,           // get_time
+  false,           // get_loc
+  true,           // roaming
+  false,          // loc set mode
+  "",            // lat
+  "",            // lon
+  "host's gloabl IP", // domain (or global IP)
+  0, // res
 };
 
 eeMem::eeMem()
