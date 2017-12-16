@@ -21,7 +21,7 @@ Pm.Echo('Remote IP: ' + Http.IP + ' URL: ' + path)
 				sendPage('Server Stuff')
 			}
 			else if(path == '/car')
-				Pm.CarSentry('CHECK')
+				Pm.CarSentry('CHECK', Http.IP, Http.Params(0,1), Http.Params(1,1) )
 			else Http.Send( "HTTP/1.1 404 Not Found\r\n\r\n" )
 			break
 		case 'HTTPDATA':
