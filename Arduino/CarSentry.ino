@@ -24,6 +24,7 @@ SOFTWARE.
 //uncomment to enable Arduino IDE Over The Air update code
 #define OTA_ENABLE
 
+//#define DEBUG
 //#define USE_SPIFFS
 
 #include <Wire.h>
@@ -82,7 +83,7 @@ AsyncWebSocket ws("/ws"); // access at ws://[esp ip]/ws
 uint16_t rh;
 int16_t carTemp;
 uint16_t volts;
-uint16_t ssCnt = 60;
+uint16_t ssCnt = 10;
 const char hostName[] = "CarSentry";
 bool bKeyGood;
 uint32_t sleepDelay = 10; // default value for WebSocket close -> sleepTimer
@@ -90,10 +91,13 @@ uint32_t sleepTimer = 60; // seconds delay after startup to enter sleep (Note: e
 int8_t openCnt;
 uint8_t nPulse;
 uint8_t pulseCh;
+IPAddress WSIP;
 
 void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue);
 JsonClient jsonParse(jsonCallback);
 JsonClient jsonPush(jsonCallback);
+void locCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue);
+JsonClient locator(locCallback);
 
 const char days[7][4] = {"Sun","Mon","Tue","Wed","Thr","Fri","Sat"};
 const char months[12][4] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
@@ -108,7 +112,9 @@ String dataJson()
   s += ", \"in1\": ";   s += digitalRead(IN1) ? 0:1;
   s += ", \"in2\": ";   s += digitalRead(IN2) ? 0:1;
   s += ", \"in12v\": ";   s += digitalRead(IN12V) ? 0:1;
-  s += "}";
+  s += ", \"lat\": \"";   s += ee.szLat;
+  s += "\", \"lon\": \"";   s += ee.szLon;
+  s += "\"}";
   return s;
 }
 
@@ -117,11 +123,15 @@ String setJson() // settings
   String s = "{";
   s += "\"o\":";    s += ee.bEnableOLED;
   s += ",\"tz\":";  s += ee.tz;
+  s += ", \"gt\": ";   s += ee.get_time;
+  s += ", \"gl\": ";   s += ee.get_loc;
   s += ",\"o1\":";  s += digitalRead(OUT1) ? 0:1;
   s += ",\"o2\":";  s += digitalRead(OUT2) ? 1:0;
   s += ",\"o3\":";  s += digitalRead(OUT3) ? 1:0;
   s += ",\"to\": "; s += ee.time_off;
-  s += "}";
+  s += ", \"ro\": ";   s += ee.roaming;
+  s += ",\"d\": \""; s += ee.szDomain;
+  s += "\"}";
   return s;
 }
 
@@ -245,7 +255,13 @@ const char *jsonListCmd[] = { "cmd",
   "sleep",
   "O1", // OUT1
   "O2",
+  "O3",
   "PLS", // Pulse OUTn for 1 second
+  "GT", // get time
+  "GL", // get location
+  "HI", // host IP/port
+  "SD", // set domain
+  "RO", // roaming
   NULL
 };
       
@@ -281,9 +297,60 @@ void jsonCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
         case 6: // O2=n
           digitalWrite(OUT2, iValue ? HIGH:LOW);
           break;
-        case 7: // PLS=Ch
+        case 7: // O3=n
+          digitalWrite(OUT3, iValue ? HIGH:LOW);
+          break;
+        case 8: // PLS=Ch
           nPulse = 2;
           pulseCh = iValue;
+          break;
+        case 9: // GT
+          ee.get_time = iValue ? true:false;
+          break;
+        case 10: // GL
+          ee.get_loc = iValue ? true:false;
+          break;
+        case 11: // host IP / port  (call from host with ?h=80)
+          ee.hostIP = WSIP;
+          ee.hostPort = iValue ? iValue:80;
+          break;
+        case 12: // global domain
+          strncpy(ee.szDomain, psValue, sizeof(ee.szDomain));
+          break;
+        case 13: // RO
+          ee.roaming = iValue ? true:false;
+          break;
+      }
+      break;
+  }
+}
+
+const char *jsonListLoc[] = { "data",
+  "result",
+  "lat",
+  "lon",
+  "time",
+  NULL
+};
+      
+void locCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
+{
+  switch(iEvent)
+  {
+    case 0: // cmd
+      switch(iName)
+      {
+        case 0: // result
+          break;
+        case 1: // lat
+          strncpy(ee.szLat, psValue, sizeof(ee.szLat) );
+          ee.locRoam = wifi.isSecure();
+          break;
+        case 2: // lon
+          strncpy(ee.szLon, psValue, sizeof(ee.szLon) );
+          break;
+        case 3: // time
+          utime.set(iValue, ee.tz);
           break;
       }
       break;
@@ -299,6 +366,7 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       client->printf("state;%s", dataJson().c_str());
       client->printf("set;%s", setJson().c_str());
       client->ping();
+      WSIP = client->remoteIP();
       openCnt++;
       break;
     case WS_EVT_DISCONNECT:    //client disconnected
@@ -363,7 +431,7 @@ void setup()
 #endif
 
   WiFi.hostname(hostName);
-  if(!wifi.autoConnect(hostName, controlPassword)) // Tries config AP.  goes to DeepSleep if not found
+  if(!wifi.autoConnect(hostName, controlPassword, ee.roaming)) // Tries config AP.  goes to DeepSleep if not found
   {
     if(digitalRead(IN1) == LOW) // hold the flash button down a couple seconds after powerup to clear SSID and password
     {                           // don't use this if IN1 is connected to something
@@ -385,7 +453,7 @@ void setup()
 #ifdef DEBUG
     Serial.println("");
     Serial.println("WiFi connected");
-    Serial.println("IP address: ");
+    Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
 #endif
     MDNS.begin ( hostName, WiFi.localIP() );
@@ -437,6 +505,33 @@ void setup()
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
 
+  server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "[";
+    int n = WiFi.scanComplete();
+    if(n == -2){
+      WiFi.scanNetworks(true);
+    } else if(n){
+      for (int i = 0; i < n; ++i){
+        if(i) json += ",";
+        json += "{";
+        json += "\"rssi\":"+String(WiFi.RSSI(i));
+        json += ",\"ssid\":\""+WiFi.SSID(i)+"\"";
+        json += ",\"bssid\":\""+WiFi.BSSIDstr(i)+"\"";
+        json += ",\"channel\":"+String(WiFi.channel(i));
+        json += ",\"secure\":"+String(WiFi.encryptionType(i));
+        json += ",\"hidden\":"+String(WiFi.isHidden(i)?"true":"false");
+        json += "}";
+      }
+      WiFi.scanDelete();
+      if(WiFi.scanComplete() == -2){
+        WiFi.scanNetworks(true);
+      }
+    }
+    json += "]";
+    request->send(200, "text/json", json);
+    json = String();
+  });
+
   server.onFileUpload([](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
   });
   server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
@@ -452,15 +547,30 @@ void setup()
 
   dht.setup(DHT22IO, DHT::DHT22);
   jsonParse.addList(jsonListCmd);
-  jsonPush.addList(jsonListCmd);
 
-  if(wifi.isCfg() == false) // not really connected to the net yet
+  if(wifi.isCfg() == false) // connected to the net
   {
-    utime.start();
-    jsonPush.begin("192.168.0.100", "/car", 83, false, true, NULL, NULL);
+    if(ee.get_time)
+      utime.start();
+    String sUri = String("/car?lon=\"");
+    sUri += ee.szLon;
+    sUri += "\"&lat=\"";
+    sUri += ee.szLat;
+    sUri += "\"";
+    IPAddress ip(ee.hostIP);
+    String url;
+    if(wifi.isSecure())
+      url = ip.toString();
+    else
+      url = ee.szDomain;
+    jsonPush.begin(url.c_str(), sUri.c_str(), ee.hostPort, false, false, NULL, NULL);
+    jsonPush.addList(jsonListCmd);
+    if(ee.szLat[0] == 0 || ee.get_loc || !wifi.isSecure() || ee.locRoam) // only needed first time and when roaming, or was roaming last
+      updateLocation();
   }
 
   sleepTimer = 60;
+  ssCnt = 10; // reset to 10 seconds
 }
 
 void loop()
@@ -473,7 +583,7 @@ void loop()
   ArduinoOTA.handle();
 #endif
 
-  if(!wifi.isCfg())
+  if(!wifi.isCfg() && ee.get_time)
     utime.check(ee.tz);
 
   if(bIn1Triggered) // sink triggered
@@ -636,4 +746,74 @@ void Scroller(String s)
     if(++ind >= len) // reset at last char
       ind = 0;
   }
+}
+
+#define min(a,b) ((a)<(b)?(a):(b))
+
+void updateLocation()
+{
+  int n = min(WiFi.scanNetworks(false,true), 5);
+  if (n <= 0) return;
+
+  String multiAPString = "";
+  for(int i = 0; i < n; i++)
+  {
+    if(i > 0)
+      multiAPString += ",";
+     multiAPString += WiFi.BSSIDstr(i) + "," + WiFi.RSSI(i);
+  }
+  char multiAPs[multiAPString.length() + 1];
+  multiAPString.toCharArray(multiAPs, multiAPString.length());
+  multiAPString = "/wifi?v=1.1&search=";
+  multiAPString += encodeBase64(multiAPs, multiAPString.length());
+  locator.begin("api.mylnikov.org", multiAPString.c_str(), 80, false, false, NULL, NULL);
+  locator.addList(jsonListLoc);
+}
+
+/*
+ * Base64 code by Rene Nyfenegger:
+ * http://www.adp-gmbh.ch/cpp/common/base64.html
+ */
+String base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+String encodeBase64(char* bytes_to_encode, unsigned int in_len)
+{
+  String ret;
+  int i = 0;
+  int j = 0;
+  unsigned char char_array_3[3];
+  unsigned char char_array_4[4];
+
+  while (in_len--) {
+    char_array_3[i++] = *(bytes_to_encode++);
+    if (i == 3) {
+      char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+      char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+      char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+      char_array_4[3] = char_array_3[2] & 0x3f;
+
+      for(i = 0; (i <4) ; i++)
+        ret += base64_chars[char_array_4[i]];
+      i = 0;
+    }
+  }
+
+  if (i)
+  {
+    for(j = i; j < 3; j++)
+      char_array_3[j] = '\0';
+
+    char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+    char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+    char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+    char_array_4[3] = char_array_3[2] & 0x3f;
+
+    for (j = 0; (j < i + 1); j++)
+      ret += base64_chars[char_array_4[j]];
+
+    while((i++ < 3))
+      ret += '=';
+
+  }
+  return ret;
 }
