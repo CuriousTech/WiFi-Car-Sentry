@@ -14,7 +14,14 @@ struct eeSet // EEPROM backed data
   uint16_t hostPort;
   uint32_t hostIP;
   uint32_t time_off;
-  uint32_t res[14];
+  uint8_t  get_time;
+  uint8_t  get_loc;
+  uint8_t  roaming;
+  uint8_t  locRoam;
+  char     szLat[24];
+  char     szLon[24];
+  char     szDomain[64];
+  uint32_t res[16];
 };
 
 extern eeSet ee;
