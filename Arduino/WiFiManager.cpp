@@ -20,13 +20,14 @@ WiFiManager::WiFiManager()
 {
 }
 
-bool WiFiManager::autoConnect(char const *apName, const char *pPass) {
+bool WiFiManager::autoConnect(char const *apName, const char *pPass, bool bAny) {
     _apName = apName;
     _pPass = pPass;
 
   DEBUG_PRINT("");
   DEBUG_PRINT("AutoConnect");
   bool bFound = false;
+  int nOpen = -1;
 
   if(ee.szSSID[0]) // scan for configured AP
   {
@@ -46,18 +47,36 @@ bool WiFiManager::autoConnect(char const *apName, const char *pPass) {
         DEBUG_PRINT("SSID found.  Connecting.");
         bFound = true;
       }
+
+      if(WiFi.encryptionType(i) == 7) // open
+        nOpen = i;
     }
     // 2.3 seconds
 
     if(bFound == false)
+    {
+      if(bAny && nOpen >= 0)
+      {
+        DEBUG_PRINT("Connecting to open WiFi");
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(WiFi.SSID(nOpen).c_str());
+        _secure = false;
+        if ( hasConnected() )
+        {
+          _bCfg = false;
+          return true;
+        }
+        return false; // can't connect to open AP  ~10 seconds
+        
+      }
       return false;
-
+    }
     // connect to configured AP
     DEBUG_PRINT("Waiting for Wifi to connect");
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(ee.szSSID, ee.szSSIDPassword);
-
+    _secure = true;
     if ( hasConnected() )
     {
       _bCfg = false;
@@ -84,8 +103,12 @@ bool WiFiManager::autoConnect(char const *apName, const char *pPass) {
   _bCfg = true;
   return true;
 }
+bool WiFiManager::isSecure(void)
+{
+  return _secure;
+}
 
-boolean WiFiManager::hasConnected(void)
+bool WiFiManager::hasConnected(void)
 {
   for(int c = 0; c < 50; c++)
   {
@@ -116,7 +139,7 @@ void WiFiManager::setPass(const char *p){
   strncpy(ee.szSSIDPassword, p, sizeof(ee.szSSIDPassword) );
   eemem.update();
   DEBUG_PRINT("Updated EEPROM.  Restaring.");
-  autoConnect(_apName, _pPass);
+  autoConnect(_apName, _pPass, false);
 }
 
 void WiFiManager::seconds(void) {
@@ -138,7 +161,7 @@ void WiFiManager::seconds(void) {
     if(WiFi.SSID(i) == ee.szSSID) // found cfg SSID
     {
       DEBUG_PRINT("SSID found.  Restarting.");
-      autoConnect(_apName, _pPass);
+      autoConnect(_apName, _pPass, false);
       s = 5; // set to 5 seconds in case it fails again
     }
   }
