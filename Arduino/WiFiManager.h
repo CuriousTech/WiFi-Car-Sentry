@@ -15,7 +15,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 
-#define DEBUG //until arduino ide can include defines at compile time from main sketch
+//#define DEBUG //until arduino ide can include defines at compile time from main sketch
 
 #ifdef DEBUG
 #define DEBUG_PRINT(x)  Serial.println(x)
@@ -28,13 +28,13 @@ class WiFiManager
 {
 public:
     WiFiManager();
-    bool autoConnect(char const *apName, const char *pPass);
+    bool autoConnect(char const *apName, const char *pPass, bool bAny);
     String page(void);
     void seconds(void);
     void setPass(const char *p);
     bool isCfg(void);
-
-    boolean hasConnected();
+    bool hasConnected();
+    bool isSecure();
 
     //for convenience
     String urldecode(const char*);
@@ -43,6 +43,7 @@ private:
     const int WM_WAIT = 10;
     bool _timeout;
     bool _bCfg;
+    bool _secure;
 
     const String HTTP_HEAD = "<!DOCTYPE html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Config ESP</title>";
     const String HTTP_STYLE = "<style>div,input {margin-bottom: 5px;}body{width:200px;display:block;margin-left:auto;margin-right:auto;}</style>";
