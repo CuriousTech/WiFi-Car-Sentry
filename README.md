@@ -12,5 +12,8 @@ I/O peripherals:
   2x 1-40V digital input (for sensing if something is on)  
   3x sink inputs (alarm or sensor)  
   3 sink outputs for controlling relays, etc (the bom has 7.6A MOSFETs)  
+  Plus extra O/I for GPS or other sensors. The outputs can be used to switch them off for more power saving.  
   
 ![esp07carsentry](http://www.curioustech.net/images/carsentry.png)
+![esp07pmwin](http://www.curioustech.net/images/cs_1.png)
+![esp07cs_wp](http://www.curioustech.net/images/cs_w.png)
