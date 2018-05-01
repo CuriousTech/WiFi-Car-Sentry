@@ -359,12 +359,15 @@ void locCallback(int16_t iEvent, uint16_t iName, int iValue, char *psValue)
 
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
 {  //Handle WebSocket event
+  String s;
 
   switch(type)
   {
     case WS_EVT_CONNECT:      //client connected
-      client->printf("state;%s", dataJson().c_str());
-      client->printf("set;%s", setJson().c_str());
+      s = String("state;") + dataJson().c_str();
+      client->text(s);
+      s = String("set;") + setJson().c_str();
+      client->text(s);
       client->ping();
       WSIP = client->remoteIP();
       openCnt++;
@@ -535,6 +538,12 @@ void setup()
   server.onFileUpload([](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
   });
   server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+  });
+
+  server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "image/x-icon", favicon, sizeof(favicon));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
   });
   server.begin();
 
